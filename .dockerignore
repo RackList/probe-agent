@@ -1,0 +1,6 @@
+.git
+.gitignore
+dist
+packaging
+README.md
+*_test.go

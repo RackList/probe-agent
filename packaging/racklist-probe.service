@@ -1,0 +1,51 @@
+[Unit]
+Description=RackList community probe agent
+Documentation=https://github.com/RackList/probe-agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=racklist-probe
+Group=racklist-probe
+
+# The token lives in this file, not in the unit: unit files are world-readable
+# by default, the environment file is not.
+EnvironmentFile=/etc/racklist-probe/agent.env
+ExecStart=/usr/local/bin/racklist-probe-agent
+
+Restart=always
+RestartSec=30s
+
+# The agent reads a token, opens outbound connections and writes to the journal.
+# Everything else is denied: it runs on a machine its operator cares about.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @obsolete
+CapabilityBoundingSet=
+UMask=0077
+
+# Bounded so a runaway agent can never starve the machine it measures from.
+MemoryMax=128M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target
