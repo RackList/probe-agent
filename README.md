@@ -29,6 +29,24 @@ beyond the IP it connects from, which RackList reads to determine your probe's
 network operator and country. That reading happens server-side and is never
 declared by the agent.
 
+### Placing your probe
+
+Once, on the first start, and again if your probe changes network, the server
+sends a short list of **anchors**: reference probes RackList operates and whose
+positions it knows. The agent opens a TCP connection to each of them, keeps the
+fastest of five attempts, and reports those timings.
+
+That is how RackList works out roughly where your probe is. Light travels about
+200 000 km/s in fibre, so a millisecond of round trip covers at most 100 km:
+timing a few known points narrows down the area, and it does so from physics
+rather than from a geolocation database. Those databases keep the previous
+owner's address on a resold IP block for weeks, which is exactly the error this
+avoids.
+
+The agent never learns where the anchors are, only how to reach them. Nothing
+about your machine is measured or sent in the process: only how long a packet
+takes to travel.
+
 ## Install
 
 You need a probe token first: enrol a probe from your RackList account

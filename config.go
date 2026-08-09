@@ -78,6 +78,8 @@ func (c *config) configURL() string { return c.API + "/config" }
 
 func (c *config) measurementsURL() string { return c.API + "/measurements" }
 
+func (c *config) calibrationURL() string { return c.API + "/calibration" }
+
 // Accepts "30s", "5m", or a bare integer read as seconds, so an operator
 // copying a number out of a shell script is not punished for it.
 func envDuration(key string) (time.Duration, error) {

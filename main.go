@@ -59,6 +59,8 @@ func run(ctx context.Context, cfg *config, api *apiClient, logger *slog.Logger) 
 	}
 	logStartup(logger, serverCfg)
 
+	calibrateIfNeeded(ctx, api, serverCfg, logger)
+
 	measureTicker := time.NewTicker(serverCfg.interval())
 	defer measureTicker.Stop()
 
@@ -92,10 +94,46 @@ func run(ctx context.Context, cfg *config, api *apiClient, logger *slog.Logger) 
 			serverCfg = fresh
 			logger.Info("pool refreshed", "targets", len(serverCfg.Targets))
 
+			// A probe that changed network has to be placed again, and the
+			// server says so by asking for calibration on the next refresh.
+			calibrateIfNeeded(ctx, api, serverCfg, logger)
+
 		case <-measureTicker.C:
 			runRound(ctx, cfg, api, serverCfg, logger)
 		}
 	}
+}
+
+// calibrateIfNeeded times the anchors and reports the result, when the server
+// asked for it.
+//
+// Best effort on purpose: a probe that could not be placed keeps measuring its
+// pool. Its position is what tells RackList how much weight to give its numbers,
+// not whether the numbers are worth collecting.
+func calibrateIfNeeded(ctx context.Context, api *apiClient, serverCfg *serverConfig, logger *slog.Logger) {
+	if !serverCfg.CalibrationRequired || len(serverCfg.Anchors) == 0 {
+		return
+	}
+
+	logger.Info("placing this probe by timing the reference probes", "anchors", len(serverCfg.Anchors))
+
+	observations := measureAnchors(ctx, serverCfg.Anchors)
+	if len(observations) == 0 {
+		logger.Warn("no reference probe could be reached, staying unplaced for now")
+		return
+	}
+
+	result, err := api.submitCalibration(ctx, observations)
+	if err != nil {
+		logger.Warn("could not report the reference timings", "err", err)
+		return
+	}
+
+	logger.Info("probe placed",
+		"observations", result.Data.AcceptedObservations,
+		"accuracy_km", result.Data.AccuracyKm,
+		"confidence", result.Data.Confidence,
+	)
 }
 
 func runRound(ctx context.Context, cfg *config, api *apiClient, serverCfg *serverConfig, logger *slog.Logger) {

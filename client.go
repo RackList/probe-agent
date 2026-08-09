@@ -26,12 +26,27 @@ type serverConfig struct {
 	ConfigRefreshSeconds       int      `json:"config_refresh_seconds"`
 	MaxBatchSize               int      `json:"max_batch_size"`
 	Targets                    []target `json:"targets"`
+
+	// Set while the server still needs to work out where this probe is. The
+	// anchors are reference probes whose positions RackList knows; timing the
+	// round trip to them is what places this one, since latency is bounded by
+	// the speed of light and a database entry is not.
+	CalibrationRequired bool     `json:"calibration_required"`
+	Anchors             []anchor `json:"anchors"`
 }
 
 type target struct {
 	ID   int64  `json:"id"`
 	URL  string `json:"url"`
 	Name string `json:"name"`
+}
+
+// A reference probe to time. Only the endpoint travels: the server keeps the
+// certified coordinates, so no agent can work out which answer would place it
+// where it would like to be.
+type anchor struct {
+	ID       int64  `json:"id"`
+	Endpoint string `json:"endpoint"`
 }
 
 func (c serverConfig) interval() time.Duration {
@@ -132,6 +147,45 @@ func (a *apiClient) submit(ctx context.Context, batch []sample) (*submitResult, 
 	var result submitResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decode submit response: %w", err)
+	}
+
+	return &result, nil
+}
+
+type calibrationResult struct {
+	Data struct {
+		AcceptedObservations int     `json:"accepted_observations"`
+		AccuracyKm           float64 `json:"accuracy_km"`
+		Confidence           string  `json:"confidence"`
+	} `json:"data"`
+}
+
+func (a *apiClient) submitCalibration(ctx context.Context, observations []observation) (*calibrationResult, error) {
+	body, err := json.Marshal(map[string]any{"observations": observations})
+	if err != nil {
+		return nil, fmt.Errorf("encode observations: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.cfg.calibrationURL(), bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("build calibration request: %w", err)
+	}
+	a.setHeaders(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := a.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("submit calibration: %w", err)
+	}
+	defer drainAndClose(resp)
+
+	if err := errorForStatus(resp); err != nil {
+		return nil, err
+	}
+
+	var result calibrationResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode calibration response: %w", err)
 	}
 
 	return &result, nil
