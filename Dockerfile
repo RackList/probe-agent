@@ -2,13 +2,18 @@
 # The attack surface of the container is the binary itself and nothing else,
 # which matters for something running on a stranger's machine.
 
-FROM golang:1.22-alpine AS builder
+# Cross-compile on the build host instead of emulating the Go toolchain
+# under QEMU: multi-arch CI builds go from ~20 min to ~1 min.
+FROM --platform=$BUILDPLATFORM golang:1.22-alpine AS builder
+
+ARG TARGETARCH
+ARG TARGETVARIANT
 
 WORKDIR /src
 COPY go.mod ./
 COPY *.go ./
 
-RUN CGO_ENABLED=0 GOOS=linux \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH GOARM=${TARGETVARIANT#v} \
     go build -trimpath -ldflags="-s -w" -o /out/probe-agent .
 
 FROM scratch

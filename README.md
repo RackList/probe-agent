@@ -76,7 +76,7 @@ docker run -d --name racklist-probe \
   --restart unless-stopped \
   -e PROBE_TOKEN=pb_xxxxx \
   -e PROBE_API=https://racklist.eu/api/v1/probe \
-  racklist/probe-agent:latest
+  ghcr.io/racklist/probe-agent:latest
 ```
 
 The image is built `FROM scratch`: a static binary, a CA bundle, and nothing
@@ -146,3 +146,14 @@ docker run --rm \
 
 `PROBE_INSECURE` is required against a `*.dev.localhost` instance: the local
 development CA is not in the scratch image. Never use it in production.
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).
+
+The agent is intentionally open source: anyone running it on their machine can
+read exactly what it measures and what leaves their network. Trust in the
+RackList probe network never comes from the agent itself, measurements are
+cross-checked server-side against independent probes.
+
+Contributions are welcome: open an issue or a pull request.
