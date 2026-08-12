@@ -11,7 +11,9 @@ import (
 	"time"
 )
 
-const userAgent = "racklist-probe-agent/" + version
+// Points at the public programme page: an administrator who finds these
+// requests in their logs can tell what measures them, and ask to be left out.
+const userAgent = "racklist-probe-agent/" + version + " (+https://racklist.eu/en/network)"
 
 // What the server tells this probe to do. The pool and the cadence both live
 // here rather than in local configuration: they are network-wide parameters,

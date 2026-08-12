@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -303,5 +304,29 @@ func withEnv(t *testing.T, env map[string]string) {
 	}
 	for key, value := range env {
 		t.Setenv(key, value)
+	}
+}
+
+// A target's administrator sees our requests before anyone tells them we
+// exist. The agent must name itself and say where to ask questions, so the
+// header carries a reachable page, not just a version.
+func TestMeasureIdentifiesItselfWithAContactPage(t *testing.T) {
+	seen := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen <- r.Header.Get("User-Agent")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	measureAll(context.Background(), &config{ProbeTimeout: 5 * time.Second, Insecure: true}, []target{
+		{ID: 1, URL: server.URL},
+	})
+
+	got := <-seen
+	if !strings.HasPrefix(got, "racklist-probe-agent/") {
+		t.Errorf("user-agent = %q, want it to name the agent", got)
+	}
+	if !strings.Contains(got, "(+https://") {
+		t.Errorf("user-agent = %q, want a contact url a sysadmin can open", got)
 	}
 }
