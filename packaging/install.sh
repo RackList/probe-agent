@@ -92,6 +92,8 @@ chown root:"${SERVICE_USER}" "${CONFIG_DIR}"
 
 if [ ! -f "${CONFIG_FILE}" ]; then
     echo "Writing ${CONFIG_FILE}..."
+    # Narrowed for the token's sake, then restored: left in place it would make every later file and directory private to root.
+    PREVIOUS_UMASK="$(umask)"
     umask 077
     cat > "${CONFIG_FILE}" <<EOF
 # RackList probe agent configuration.
@@ -102,6 +104,7 @@ PROBE_API=${PROBE_API}
 EOF
     chmod 0640 "${CONFIG_FILE}"
     chown root:"${SERVICE_USER}" "${CONFIG_FILE}"
+    umask "${PREVIOUS_UMASK}"
 else
     echo "Keeping the existing ${CONFIG_FILE}."
 fi
@@ -129,6 +132,7 @@ DROPIN="${DROPIN_DIR}/10-container.conf"
 if systemd-detect-virt --container >/dev/null 2>&1; then
     echo "Container detected: relaxing the sandboxing this kernel will not allow."
     mkdir -p "${DROPIN_DIR}"
+    chmod 0755 "${DROPIN_DIR}"
     cat > "${DROPIN}" <<'DROPIN_EOF'
 # Mount-based isolation cannot be set up in a container: the host denies the
 # mounts. Everything else in the unit still applies, and what is dropped here is
