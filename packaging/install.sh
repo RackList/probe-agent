@@ -121,9 +121,58 @@ else
     chmod 0644 "/etc/systemd/system/${SERVICE_NAME}.service"
 fi
 
+DROPIN_DIR="/etc/systemd/system/${SERVICE_NAME}.service.d"
+DROPIN="${DROPIN_DIR}/10-container.conf"
+
+# Inside a container the host refuses the mounts the sandbox is made of, and the
+# service dies with 226/NAMESPACE. Removed again if the machine is ever a VM.
+if systemd-detect-virt --container >/dev/null 2>&1; then
+    echo "Container detected: relaxing the sandboxing this kernel will not allow."
+    mkdir -p "${DROPIN_DIR}"
+    cat > "${DROPIN}" <<'DROPIN_EOF'
+# Mount-based isolation cannot be set up in a container: the host denies the
+# mounts. Everything else in the unit still applies, and what is dropped here is
+# already covered: with no capabilities and @privileged denied, the agent cannot
+# load a module or reach kernel tunables anyway.
+[Service]
+PrivateTmp=no
+PrivateDevices=no
+ProtectSystem=no
+ProtectHome=no
+ProtectKernelTunables=no
+ProtectKernelModules=no
+ProtectKernelLogs=no
+ProtectControlGroups=no
+ProtectProc=default
+DROPIN_EOF
+    chmod 0644 "${DROPIN}"
+else
+    rm -f "${DROPIN}"
+fi
+
 systemctl daemon-reload
-systemctl enable "${SERVICE_NAME}" >/dev/null 2>&1 || true
+if ! systemctl enable "${SERVICE_NAME}" >/dev/null 2>&1; then
+    echo "warning: could not enable ${SERVICE_NAME} at boot, the probe will not come back after a reboot" >&2
+fi
 systemctl restart "${SERVICE_NAME}"
+
+# The agent talks to the API before it settles, so a slow link is not a failure.
+waited=0
+while [ "${waited}" -lt 15 ]; do
+    systemctl is-active --quiet "${SERVICE_NAME}" && break
+    waited=$((waited + 1))
+    sleep 1
+done
+
+# Checked again after a pause: a crash loop is "active" for a moment too.
+sleep 3
+if ! systemctl is-active --quiet "${SERVICE_NAME}"; then
+    echo >&2
+    echo "The probe did not start. Last lines of its log:" >&2
+    journalctl -u "${SERVICE_NAME}" -n 20 --no-pager >&2 || true
+    echo >&2
+    die "install finished but ${SERVICE_NAME} is not running (see above, then: systemctl status ${SERVICE_NAME})"
+fi
 
 echo
 echo "Done. The probe is running."
