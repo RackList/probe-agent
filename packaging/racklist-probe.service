@@ -40,6 +40,8 @@ MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @resources @obsolete
+# The Go runtime raises RLIMIT_NOFILE before main runs. Denying setrlimit with the rest of @resources kills the agent with SIGSYS, before it can log a thing.
+SystemCallFilter=setrlimit
 CapabilityBoundingSet=
 UMask=0077
 
