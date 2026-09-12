@@ -45,6 +45,9 @@ jobs:
           build amd64 amd64
           build arm64 arm64
           build armv7 arm 7
+      # The README curls install.sh from the release, so it has to be there: a missing file fails the job instead of the quickstart.
+      - name: Stage the packaging files
+        run: cp packaging/install.sh packaging/racklist-probe.service dist/
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}

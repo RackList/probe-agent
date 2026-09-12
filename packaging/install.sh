@@ -38,10 +38,11 @@ esac
 
 VERSION="${PROBE_VERSION:-latest}"
 if [ "${VERSION}" = "latest" ]; then
-    DOWNLOAD_URL="https://github.com/${REPO}/releases/latest/download/${BINARY_NAME}-linux-${ARCH}"
+    RELEASE_BASE="https://github.com/${REPO}/releases/latest/download"
 else
-    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${BINARY_NAME}-linux-${ARCH}"
+    RELEASE_BASE="https://github.com/${REPO}/releases/download/${VERSION}"
 fi
+DOWNLOAD_URL="${RELEASE_BASE}/${BINARY_NAME}-linux-${ARCH}"
 
 echo "Downloading ${BINARY_NAME} (linux/${ARCH})..."
 TMP_BINARY="$(mktemp)"
@@ -110,7 +111,8 @@ if [ -f "${SERVICE_SRC}" ]; then
     install -m 0644 "${SERVICE_SRC}" "/etc/systemd/system/${SERVICE_NAME}.service"
 else
     echo "Downloading the systemd unit..."
-    UNIT_URL="https://raw.githubusercontent.com/${REPO}/main/packaging/${SERVICE_NAME}.service"
+    # From the release rather than from a branch: what installs as root moves only when a version does.
+    UNIT_URL="${RELEASE_BASE}/${SERVICE_NAME}.service"
     if command -v curl >/dev/null 2>&1; then
         curl -fsSL "${UNIT_URL}" -o "/etc/systemd/system/${SERVICE_NAME}.service" || die "could not fetch the systemd unit"
     else
