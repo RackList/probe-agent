@@ -1,0 +1,91 @@
+name: Packaging
+
+on:
+  push:
+    branches: [main]
+    paths: ["packaging/**", ".github/workflows/packaging.yml", "**.go", "go.mod"]
+  pull_request:
+    paths: ["packaging/**", ".github/workflows/packaging.yml", "**.go", "go.mod"]
+
+# Unit tests pass on a build that cannot start: the sandbox, the syscall filter
+# and the installer are properties of the packaging, not of the Go code.
+jobs:
+  install-vm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build the current binary
+        run: CGO_ENABLED=0 go build -trimpath -o /tmp/racklist-probe-agent .
+
+      # Port 9 answers nothing, which the agent treats as a transient failure and
+      # retries: the service stays up, which is exactly what is under test.
+      - name: Run the documented install
+        run: |
+          sudo PROBE_TOKEN=pb_ci_placeholder PROBE_API=https://127.0.0.1:9/api \
+            sh packaging/install.sh
+
+      - name: The service must be running
+        run: |
+          systemctl is-active --quiet racklist-probe \
+            || { sudo journalctl -u racklist-probe -n 30 --no-pager; exit 1; }
+          systemctl is-enabled --quiet racklist-probe
+
+      - name: A VM must keep the full sandbox
+        run: |
+          test ! -e /etc/systemd/system/racklist-probe.service.d/10-container.conf
+          test "$(systemctl show racklist-probe -p PrivateTmp --value)" = "yes"
+          test "$(systemctl show racklist-probe -p ProtectSystem --value)" = "strict"
+
+      # The install fetched the released binary. Swapping in the one just built
+      # is what catches a new syscall the sandbox would kill on the next release.
+      - name: The current build must survive the sandbox too
+        run: |
+          sudo install -m 0755 /tmp/racklist-probe-agent /usr/local/bin/racklist-probe-agent
+          sudo systemctl restart racklist-probe
+          sleep 5
+          systemctl is-active --quiet racklist-probe \
+            || { sudo journalctl -u racklist-probe -n 30 --no-pager; exit 1; }
+          sudo journalctl -u racklist-probe -n 30 --no-pager | grep -q "probe agent starting"
+
+  install-container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      # A container with a working systemd is not something a runner offers, so
+      # the container branch is exercised through its two inputs instead.
+      - name: Stub what the script asks about the machine
+        run: |
+          mkdir -p /tmp/stub
+          printf '#!/bin/sh\necho lxc\nexit 0\n' > /tmp/stub/systemd-detect-virt
+          printf '#!/bin/sh\nexit 0\n' > /tmp/stub/systemctl
+          printf '#!/bin/sh\nexit 0\n' > /tmp/stub/journalctl
+          chmod +x /tmp/stub/*
+
+      - name: Run the install as if on a container
+        run: |
+          sudo env "PATH=/tmp/stub:$PATH" \
+            PROBE_TOKEN=pb_ci_placeholder PROBE_API=https://127.0.0.1:9/api \
+            sh packaging/install.sh
+
+      - name: The relaxations must be dropped in
+        run: |
+          conf=/etc/systemd/system/racklist-probe.service.d/10-container.conf
+          test -f "$conf"
+          for directive in PrivateTmp PrivateDevices ProtectSystem ProtectHome \
+              ProtectKernelTunables ProtectKernelModules ProtectKernelLogs \
+              ProtectControlGroups; do
+            grep -qx "${directive}=no" "$conf" || { echo "missing: ${directive}=no"; exit 1; }
+          done
+          grep -qx "ProtectProc=default" "$conf"
+
+      # What stays in force is the point: relaxing the mounts must not quietly
+      # relax the rest.
+      - name: The drop-in must not touch anything else
+        run: |
+          conf=/etc/systemd/system/racklist-probe.service.d/10-container.conf
+          ! grep -qE '^(CapabilityBoundingSet|NoNewPrivileges|SystemCallFilter|MemoryDenyWriteExecute|RestrictAddressFamilies)=' "$conf"
